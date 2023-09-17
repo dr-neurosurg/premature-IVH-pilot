@@ -1,0 +1,437 @@
+# Code for "Early Prediction of Permanent CSF Diversion in Preterm Infants with Severe Intraventricular Hemorrhage: a pilot study using an artificial neural network trained on clinical and imaging data"
+
+! pip install -Uqq fastai fastbook
+## Data prep
+# 1. Download [DATA FILE - REDACTED]
+from google.colab import drive
+drive.mount('/content/gdrive')
+
+Mounted at /content/gdrive
+from os import walk
+from google.colab import files
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from PIL import Image
+
+# GDRIVE_PATH_TO_RAW_IMAGES = '[REDACTED]'
+GDRIVE_PATH_TO_RAW_IMAGES = '[REDACTED]'
+RAW_IMG_DIR = 'raw'
+MASK_DIR = 'masks'
+IMG_DIR = 'processed'
+VTK_TO_PNG_CONVERTER = 'convert_vtk_to_png.sh'
+
+## PROCESS IMAGES
+
+##LOAD AND VIEW
+GDRIVE_PATH_TO_PROCESSED_IMAGES = '[DATA FILE - REDACTED]'
+def create_df():
+    name = []
+    for dirname, _, filenames in walk(GDRIVE_PATH_TO_PROCESSED_IMAGES + IMG_DIR ):
+        for filename in filenames:
+            val = filename.split('.')[0]
+            if(val):
+                name.append(val)
+    
+    return pd.DataFrame({'id': name}, index = np.arange(0, len(name)))
+
+df_image_files = create_df()
+print('Total Images: ', len(df_image_files))
+Total Images: 58
+df_image_files['mrn'] = df_image_files.id.str[:8]
+df_images = df_image_files.copy()
+def view_image_by_idx(image_idx):
+  default_fig_size = (8,8)
+  img = Image.open(GDRIVE_PATH_TO_PROCESSED_IMAGES + IMG_DIR + '/' + df_image_files['id'][image_idx] 
+  mask = Image.open(GDRIVE_PATH_TO_PROCESSED_IMAGES + MASK_DIR + '/' + df_image_files['id'][image_idx
+  print('Image Size', np.asarray(img).shape)
+  print('Mask Size', np.asarray(mask).shape)
+  print('MRN', df_image_files['mrn'][image_idx])
+  plt.figure(figsize=default_fig_size)
+  plt.title('Raw Image')
+  plt.imshow(img, cmap='gray', vmin=0, vmax=255)
+  # plt.figure(figsize=default_fig_size)
+  # plt.title('Mask')
+  # plt.imshow(mask, alpha=0.6)
+  # plt.figure(figsize=default_fig_size)
+  # plt.title('Image w/ Mask')
+  # plt.imshow(img, cmap='gray', vmin=0, vmax=255)
+  # plt.imshow(mask, alpha=0.9)
+  plt.show()
+def view_image_by_mrn(mrn):
+  default_fig_size = (8,8)
+
+  selected_image = df_image_files[df_image_files.mrn == str(mrn)].iloc[0]
+  img = Image.open(GDRIVE_PATH_TO_PROCESSED_IMAGES + IMG_DIR + '/' + selected_image['id'] + '.png')
+  mask = Image.open(GDRIVE_PATH_TO_PROCESSED_IMAGES + MASK_DIR + '/' + selected_image['id'] + 'seg.pn
+  print('Image Size', np.asarray(img).shape)
+  print('Mask Size', np.asarray(mask).shape)
+  plt.figure(figsize=default_fig_size)
+  plt.title('Raw Image')
+  plt.imshow(img, cmap='gray', vmin=0, vmax=255)
+  plt.figure(figsize=default_fig_size)
+  plt.title('Mask')
+  plt.imshow(mask, alpha=0.6)
+  plt.figure(figsize=default_fig_size)
+  plt.title('Image w/ Mask')
+  plt.imshow(img, cmap='gray', vmin=0, vmax=255)
+  plt.imshow(mask, alpha=0.9)
+  plt.show()
+view_image_by_idx(14)
+Image Size (768, 1024)
+Mask Size (768, 1024)
+MRN [INSERT MRN - REDACTED]
+
+##CLEAN & PROCESS TABULAR DATA
+
+pd.options.display.max_rows = 58
+pd.options.display.max_columns = 58
+GDRIVE_PATH_TO_TABULAR_DATA = '[DATA FILE - REDACTED]'
+
+GDRIVE_PATH_TO_ZOOM_DATA = '[DATA FILE - REDACTED]'
+df_zoom_details = pd.read_csv(GDRIVE_PATH_TO_ZOOM_DATA, low_memory=False)
+len(df_zoom_details), len(df_zoom_details.columns)
+(58, 5)
+df_tabular = pd.merge(df_tabular, df_zoom_details[['mrn', 'mag', 'scale']], how="left", on='mrn')
+df_tabular.head()
+
+sexes = ['male', 'female']
+df_tabular['sex'] = df_tabular.sex.map({1: 'male', 0: 'female'})
+df_tabular['sex'] = df_tabular['sex'].astype('category')
+df_tabular['sex'].cat.set_categories(sexes, ordered=False, inplace=True)
+
+
+transfers = ['Y', 'N']
+df_tabular['transfer'] = df_tabular.transfer.map({1: 'Y', 0: 'N'})
+df_tabular['transfer'] = df_tabular['transfer'].astype('category')
+df_tabular['transfer'].cat.set_categories(transfers, ordered=False, inplace=True)
+
+# map_vals = {1: 'grade-1', 2: 'grade-2', 3: 'grade-3', 4: 'grade-4'}
+# df_tabular['ivh_grade'] = df_tabular['ivh_grade'].map(map_vals)
+# cat_vals = list(map_vals.values())
+# df_tabular['ivh_grade'] = df_tabular['ivh_grade'].astype('category')
+# df_tabular['ivh_grade'].cat.set_categories(cat_vals, ordered=True, inplace=True)
+surgs = ['no-surgical-intervention', 'surgical-intervention']
+df_tabular['surg_y_n'] = df_tabular.surg_y_n.map({0: 'no-surgical-intervention', 1: 'surgical-interve
+df_tabular['surg_y_n'] = df_tabular['surg_y_n'].astype('category')
+df_tabular['surg_y_n'].cat.set_categories(surgs, ordered=False, inplace=True)
+
+df_tabular['perm_surg'] = df_tabular.perm_surg.map({0: 'no-permanent-surgical-intervention', 1: 'perm_surg'})
+
+cols_y_n = ['pda_no_rx', 'pda_yes_rx', 'sepsis_confirmed', 'sepsis_suspect', \
+            'nec', 'bpd', 'aop', 'rop', 'mom_drugs', 'mom_no_prenatal', 'mom_inadeq_prenatal']
+for col_name in cols_y_n:
+    df_tabular[col_name] = df_tabular[col_name].map({0: 'N', 1: 'Y'})
+    df_tabular[col_name] = df_tabular[col_name].astype('category')
+    df_tabular[col_name].cat.set_categories(['Y', 'N'], ordered=False, inplace=True)
+
+# map_vals = {0: 'right', 1: 'left', 2: 'bilateral'}
+# df_tabular['ivh_lat'] = df_tabular.ivh_lat.map(map_vals)
+# cat_vals = list(map_vals.values())
+# df_tabular['ivh_lat'] = df_tabular['ivh_lat'].astype('category')
+# df_tabular['ivh_lat'].cat.set_categories(cat_vals, ordered=False, inplace=True)
+# df_tabular['gest_age_days'] = df_tabular.ga_days * 7
+# df_tabular['gest_age_days'] = df_tabular['gest_age_days'].astype('int')
+
+# "baby_other" + "us_but_no_baby" = "outside_skull"
+# "r_thalamus" + "l_thalamus" + "r_skull" + "l_skull" + "brain" = "brain_skull"
+
+labels = {
+    0: 'no-label',
+    1: 'r_lat_vent',
+    2: 'l_lat_vent',
+    3: 'r_ivh',
+    4: 'l_ivh',
+    5: 'r_outline_vent',
+    6: 'l_outline_vent',
+    7: 'r_thalamus',
+    8: 'l_thalamus',
+    9: 'r_skull',
+    10: 'brain',
+    11: 'interhemi_fissure',
+    12: 'third_vent',
+    13: 'cerebral_aque',
+    14: 'baby_other',
+    15: 'us_but_no_baby',
+    16: 'r_monro',
+    17: 'l_monro',
+    18: 'l_skull',
+    19: 'r_lat_vent_inf',
+    20: 'l_lat_vent_inf',
+}
+
+empty_labels = dict(zip(list(labels.keys()), np.zeros(len(labels))))
+data = []
+for idx, row in df_image_files.iterrows():
+    filename = GDRIVE_PATH_TO_PROCESSED_IMAGES + MASK_DIR + '/' + df_image_files['id'][idx] + 'seg.pn
+    mask = Image.open(filename)
+    mask_arr = np.asarray(mask)
+    unique, counts = np.unique(mask_arr, return_counts=True)
+    new_labels = dict(zip(unique, counts))
+    z = dict(list(empty_labels.items()) + list(new_labels.items())) 
+    prepped_data = [row.mrn] + list(z.values())
+    data.append(prepped_data)
+processed_images_columns = ['mrn'] + list(labels.values())
+
+df_images = pd.DataFrame(data, columns=processed_images_columns)
+# "baby_other" + "us_but_no_baby" = "outside_skull"
+# "r_thalamus" + "l_thalamus" + "r_skull" + "l_skull" + "brain" = "brain_skull"
+df_images['brain_skull'] = df_images['r_thalamus'] + df_images['l_thalamus'] + df_images['r_skull'] +
+df_images['outside_skull'] = df_images['baby_other'] + df_images['us_but_no_baby'] 
+
+df_images.head()
+
+
+## Feature Engineering
+
+df_images['mrn'] = df_images.mrn.astype('int')
+df = pd.merge(df_tabular, df_images, how='outer', on='mrn').reset_index(drop=True)
+len(df_tabular), len(df_tabular.mrn.unique())
+(58, 58)
+len(df_images), len(df_images.mrn.unique())
+(58, 58)
+len(df), len(df.mrn.unique())
+(58, 58)
+
+## Load data
+
+# !pip install -Uqq fastai fastcore fastbook
+# ! pip install nbdev --upgrade
+import fastbook
+fastbook.setup_book()
+from fastbook import *
+from pandas.api.types import is_string_dtype, is_numeric_dtype, is_categorical_dtype
+from fastai.tabular.core import *
+df.columns
+
+df.columns
+Index(['sex', 'bw_g', 'ofc_birth', 'len_birth', 'ga_days', 'transfer',
+ 'distance', 'pt_age_pres_riley', 'total_age_pres_days',
+ 'us_age_pres_riley', 'total_age_us_days', 'age_first_surg',
+ 'total_age_first_surg', 'age_death', 'age_dc', 'age_dead_dc',
+ 'total_age_end', 'vr_age', 'vsgs_age', 'etv_age', 'vps_age',
+ 'temp_surg', 'perm_surg', 'surg_y_n', 'death0_dc1', 'score1_como',
+ 'score2_como', 'score1_mom_risk', 'score2_mom_risk', 'pda_no_rx',
+ 'pda_yes_rx', 'sepsis_confirmed', 'sepsis_suspect', 'nec', 'bpd', 'aop',
+ 'rop', 'mom_drugs', 'mom_no_prenatal', 'mom_inadeq_prenatal', 'mrn',
+ 'mag', 'scale', 'no-label', 'r_lat_vent', 'l_lat_vent', 'r_ivh',
+ 'l_ivh', 'r_outline_vent', 'l_outline_vent', 'r_thalamus', 'l_thalamus',
+ 'r_skull', 'brain', 'interhemi_fissure', 'third_vent', 'cerebral_aque',
+ 'baby_other', 'us_but_no_baby', 'r_monro', 'l_monro', 'l_skull',
+ 'r_lat_vent_inf', 'l_lat_vent_inf', 'brain_skull', 'outside_skull'],
+ dtype='object')
+dep_var = 'perm_surg'
+cat_features = ['sex', 'transfer', 'mom_drugs', 'mom_no_prenatal', 'mom_inadeq_prenatal']
+clinical_cont_features = ['bw_g', 'ofc_birth', 'len_birth', 'distance', 'ga_days', 'pt_age_pres_riley
+                          'us_age_pres_riley'] 
+image_cont_features = ['outside_skull', 'brain_skull', 'r_lat_vent', 'l_lat_vent', 'r_ivh', 'l_ivh', 
+                       'r_outline_vent', 'l_outline_vent', 'interhemi_fissure', 'third_vent', \
+                       'cerebral_aque', 'r_monro', 'l_monro', 'r_lat_vent_inf', 'l_lat_vent_inf', 'ma
+                       'scale']
+cont_features = image_cont_features # +  clinical_cont_features 
+procs = [FillMissing, Categorify, Normalize]
+all_features = cont_features # + cat_features
+len(all_features)
+17
+print('clinical features')
+print(cat_features + clinical_cont_features)
+print('ultrasound (img) features')
+print(image_cont_features)
+clinical features
+['sex', 'transfer', 'mom_drugs', 'mom_no_prenatal', 'mom_inadeq_prenatal', 'bw_g', 'ofc_birth',
+ultrasound (img) features
+['outside_skull', 'brain_skull', 'r_lat_vent', 'l_lat_vent', 'r_ivh', 'l_ivh', 'r_outline_vent',
+splits = RandomSplitter(valid_pct=0.22, seed=10)(range_of(df))
+len(splits[0]), len(splits[1]) 
+(46, 12)
+train_ids, test_ids = list(splits[0]), list(splits[1])
+to = TabularPandas(df, procs, [], cont_features, y_names=dep_var, splits=splits)
+# to = TabularPandas(df, procs, cat_features, cont_features, y_names=dep_var, splits=splits)
+len(to.train),len(to.valid)
+(46, 12)
+GDRIVE_PKL_PATH = '[DATA FILE - REDACTED]'
+save_pickle(GDRIVE_PKL_PATH + 'image.pkl', to)
+to = load_pickle(GDRIVE_PKL_PATH + 'image.pkl') 
+to.show(5)
+
+## MODELING
+from sklearn.metrics import ConfusionMatrixDisplay
+from sklearn.metrics import roc_curve, auc, roc_auc_score, confusion_matrix, classification_report
+def rt_feat_importance(m, df):
+    return pd.DataFrame({'cols':df.columns, 'imp':m.feature_importances_}).sort_values('imp', ascendi
+def plot_fi(fi):
+    return fi.plot('cols', 'imp', 'barh', figsize=(12,12), legend=False)
+X_train, y_train = to.train.xs, to.train.ys.values.ravel()
+X_test, y_test = to.valid.xs, to.valid.ys.values.ravel()
+
+## Artificial Neural Network
+
+from fastai.tabular.learner import *
+import seaborn as sns
+# hyperparameter tuning
+# batch_size https://datascience.stackexchange.com/questions/52884/possible-for-batch-size-of-neural-
+# epochs
+# learning rate
+# model architecture
+  # # of layers
+  # nodes per layer
+  # loss function
+# epoch: 100
+# images: 46
+# batch_size: 16
+# learn = tabular_learner(dls, [30, 15], metrics=[accuracy])
+# lr = 10e-4
+# learn.fit_one_cycle(100, lr)
+dls = to.dataloaders(bs=16)
+len(all_features)
+
+learn = tabular_learner(dls, [30, 15], metrics=[accuracy])
+learn.lr_find()
+print(lr)
+
+#learn.fit(10, lr)
+# def random_seed(seed_value, use_cuda=False):
+#     np.random.seed(seed_value) # cpu vars
+#     torch.manual_seed(seed_value) # cpu  vars
+#     random.seed(seed_value) # Python
+#     if use_cuda: 
+#         torch.cuda.manual_seed(seed_value)
+#         torch.cuda.manual_seed_all(seed_value) # gpu vars
+#         torch.backends.cudnn.deterministic = True  #needed
+#         torch.backends.cudnn.benchmark = False
+#random_seed(0)
+
+learn.fit_one_cycle(100, lr)
+
+learn.recorder.plot_loss()
+
+interp = ClassificationInterpretation.from_learner(learn)
+interp.print_classification_report()
+
+learn.save('image')
+
+# test_ids
+
+# df.index.in(test_ids)
+
+#training dataset sweep
+
+to = learn.dls.train_ds.new(df)
+to.process()
+dl = TabDataLoader(to)
+preds, targets = learn.get_preds(dl=dl)
+
+
+actual_label = torch.flatten(targets).numpy()
+prediction_label = np.argmax(preds, 1).numpy()
+
+predictions = preds.numpy()
+predict_0 = np.hsplit(predictions, 2)[0]
+predict_0 = list(predict_0.reshape((1,len(predict_0)))[0])
+predict_1 = np.hsplit(predictions, 2)[1]
+predict_1 = list(predict_1.reshape((1,len(predict_1)))[0])
+len(actual_label), len(prediction_label), len(predictions), len(predict_0), len(predict_1)
+
+# mrns = df.iloc[test_ids].mrn
+mrns = list(df.mrn)
+# list_ids = test_ids
+list_ids = list(df.index)
+df_results = pd.DataFrame(data={
+    'patient_id': list_ids,
+    'mrn': mrns,
+    'actual_label': list(actual_label), 
+    'prediction_label': list(prediction_label), 
+    'predict_0': list(predict_0),
+    'predict_1': list(predict_1),
+    })
+df_results['predict_0'] = round(df_results['predict_0'] * 100, 2)
+df_results['predict_1'] = round(df_results['predict_1'] * 100, 2)
+df_results['is_correct'] = df_results.actual_label == df_results.prediction_label
+df_results['confidence'] = abs(df_results.predict_0 - 50) * 2 # 100% is maximum confidence
+df_results['is_confident'] = df_results['confidence'] > 50
+df_results.to_csv('image_confidence.csv')
+sns.displot(df_results, x="confidence", bins=20)
+<seaborn.axisgrid.FacetGrid at 0x7f1b79756490>
+# df_results.to_csv('output_2.csv')
+
+
+## FEATURE IMPORTANCE
+
+class PermutationImportance():
+ "Calculate and plot the permutation importance"
+  def __init__(self, learn:Learner, df=None, bs=None):
+    "Initialize with a test dataframe, a learner, and a metric"
+    self.learn = learn
+    self.df = df
+    bs = bs if bs is not None else learn.dls.bs
+    if self.df is not None:
+      self.dl = learn.dls.test_dl(self.df, bs=bs)
+    else:
+      self.dl = learn.dls[1]
+    self.x_names = learn.dls.x_names.filter(lambda x: '_na' not in x)
+    self.na = learn.dls.x_names.filter(lambda x: '_na' in x)
+    self.y = dls.y_names
+    self.results = self.calc_feat_importance()
+    self.plot_importance(self.ord_dic_to_df(self.results))
+  def measure_col(self, name:str):
+    "Measures change after column shuffle"
+    col = [name]
+    if f'{name}_na' in self.na: col.append(name)
+    orig = self.dl.items[col].values
+    perm = np.random.permutation(len(orig))
+    self.dl.items[col] = self.dl.items[col].values[perm]
+    metric = learn.validate(dl=self.dl)[1]
+    self.dl.items[col] = orig
+    return metric
+
+  def calc_feat_importance(self):
+    "Calculates permutation importance by shuffling a column on a percentage scale"
+    print('Getting base error')
+    base_error = self.learn.validate(dl=self.dl)[1]
+    self.importance = {}
+    pbar = progress_bar(self.x_names)
+    print('Calculating Permutation Importance')
+    for col in pbar:
+      self.importance[col] = self.measure_col(col)
+    for key, value in self.importance.items():
+      self.importance[key] = (base_error-value)/base_error #this can be adjusted
+    return OrderedDict(sorted(self.importance.items(), key=lambda kv: kv[1], reverse=True))
+
+  def ord_dic_to_df(self, dict:OrderedDict):
+    return pd.DataFrame([[k, v] for k, v in dict.items()], columns=['feature', 'importance'])
+  def plot_importance(self, df:pd.DataFrame, limit=20, asc=False, **kwargs):
+    "Plot importance with an optional limit to how many variables shown"
+    df_copy = df.copy()
+    df_copy['feature'] = df_copy['feature'].str.slice(0,25)
+    df_copy = df_copy.sort_values(by='importance', ascending=asc)[:limit].sort_values(by='importance'
+    ax = df_copy.plot.barh(x='feature', y='importance', sort_columns=True, **kwargs)
+    for p in ax.patches:
+      ax.annotate(f'{p.get_width():.4f}', ((p.get_width() * 1.005), p.get_y()  * 1.005))
+
+    
+  def get_df(self):
+    return self.ord_dic_to_df(self.results)
+
+res = PermutationImportance(learn)
+
+df_perm_importance = res.get_df()
+df_perm_importance.to_csv('image_perm_importance.csv')
+# learn.validate(dl=dl)[0]
+# type(learn.dls.test_dl(df, bs=2))
+# to = learn.dls.train_ds.new(df)
+# to.process()
+# dl = TabDataLoader(to)
+# df_feature_importance = res.get_df()
+# https://github.com/fastai/book_nbs/blob/master/utils.py
+cluster_columns(X_train, figsize=(15,15))
+
+interp = ClassificationInterpretation.from_learner(learn)
+interp.plot_confusion_matrix()
+
+interp = ClassificationInterpretation.from_learner(learn)
+
+top_losses = interp.top_losses()
+
+interp = ClassificationInterpretation.from_learner(learn)
+interp.print_classification_report()
+
